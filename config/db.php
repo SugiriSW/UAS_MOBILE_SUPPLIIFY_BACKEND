@@ -3,7 +3,7 @@
 
 $host = "localhost";       // server database
 $user = "root";            // user MySQL
-$pass = "";                // password MySQL, default kosong di XAMPP
+$pass = "restucs27";                // password MySQL, default kosong di XAMPP
 $dbname = "simple_order_db"; // nama database
 
 // membuat koneksi
