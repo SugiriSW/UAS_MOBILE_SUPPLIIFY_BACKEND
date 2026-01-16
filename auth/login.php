@@ -1,51 +1,68 @@
 <?php
-// Tambahkan header CORS untuk Flutter Web
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
-
-header('Content-Type: application/json');
-include "../config/db.php";
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
-    exit;
+    exit();
 }
 
-// ambil data POST (support JSON dan form)
-$input = json_decode(file_get_contents('php://input'), true);
-$username = $input['username'] ?? $_POST['username'] ?? '';
-$password = $input['password'] ?? $_POST['password'] ?? '';
-error_log("php://input: " . file_get_contents('php://input'));
-error_log("POST: " . print_r($_POST, true));
+require_once "../config/database.php";
 
-// validasi sederhana
-if(empty($username) || empty($password)){
+$data = json_decode(file_get_contents("php://input"), true);
+
+$email    = trim($data['email'] ?? '');
+$password = $data['password'] ?? '';
+
+if (!$email || !$password) {
     echo json_encode([
-        "status" => "failed",
-        "message" => "Username atau password kosong"
+        "status" => false,
+        "message" => "Email dan password wajib diisi"
     ]);
     exit;
 }
 
-// query cek user
-$query = "SELECT * FROM users WHERE username=? AND password=?";
-$stmt = $conn->prepare($query);
-$stmt->bind_param("ss", $username, $password);
-$stmt->execute();
-$result = $stmt->get_result();
+// cari user
+$stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+$stmt->execute([$email]);
+$user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if($result->num_rows > 0){
-    $user = $result->fetch_assoc();
+if (!$user) {
     echo json_encode([
-        "status" => "success",
-        "user_id" => $user['id'],
-        "role" => $user['role']
+        "status" => false,
+        "message" => "Email tidak terdaftar"
     ]);
-}else{
-    echo json_encode([
-        "status" => "failed",
-        "message" => "Username atau password salah"
-    ]);
+    exit;
 }
-?>
+
+// cek password
+if (!password_verify($password, $user['password'])) {
+    echo json_encode([
+        "status" => false,
+        "message" => "Password salah"
+    ]);
+    exit;
+}
+
+// cek status approval
+if ($user['status'] !== 'approved') {
+    echo json_encode([
+        "status" => false,
+        "message" => "Akun belum disetujui admin"
+    ]);
+    exit;
+}
+
+// sukses login
+echo json_encode([
+    "status" => true,
+    "message" => "Login berhasil",
+    "data" => [
+        "id"    => $user['id'],
+        "name"  => $user['name'],
+        "email" => $user['email'],
+        "role"  => $user['role'],
+    ]
+]);

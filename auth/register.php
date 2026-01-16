@@ -1,96 +1,51 @@
 <?php
-// auth/register.php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Content-Type: application/json; charset=UTF-8");
+header("Content-Type: application/json");
 
-// Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+// Handle preflight
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
-    exit;
+    exit();
 }
+header("Content-Type: application/json");
+require_once "../config/database.php";
 
-include "../config/db.php";
+$data = json_decode(file_get_contents("php://input"), true);
 
-// Debug: log input
-error_log("Register request received");
-error_log("POST data: " . print_r($_POST, true));
+$name     = trim($data['name'] ?? '');
+$email    = trim($data['email'] ?? '');
+$password = $data['password'] ?? '';
 
-// ambil data POST
-$username = $_POST['username'] ?? '';
-$password = $_POST['password'] ?? '';
-$role = $_POST['role'] ?? 'client'; // default client
-
-// validasi sederhana
-if(empty($username) || empty($password)){
+if (!$name || !$email || !$password) {
     echo json_encode([
-        "status" => "failed",
-        "message" => "Username atau password kosong",
-        "received_data" => [
-            "username" => $username,
-            "password_length" => strlen($password),
-            "role" => $role
-        ]
+        "status" => false,
+        "message" => "Data tidak lengkap"
     ]);
     exit;
 }
 
-// cek username sudah ada atau belum
-$check = "SELECT * FROM users WHERE username=?";
-$stmt = $conn->prepare($check);
-if(!$stmt){
+// cek email
+$stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+$stmt->execute([$email]);
+if ($stmt->fetch()) {
     echo json_encode([
-        "status" => "failed",
-        "message" => "Database prepare error: " . $conn->error
+        "status" => false,
+        "message" => "Email sudah terdaftar"
     ]);
     exit;
 }
 
-$stmt->bind_param("s", $username);
-$stmt->execute();
-$result = $stmt->get_result();
+$hash = password_hash($password, PASSWORD_BCRYPT);
 
-if($result->num_rows > 0){
-    echo json_encode([
-        "status" => "failed",
-        "message" => "Username '$username' sudah terdaftar"
-    ]);
-    exit;
-}
+$stmt = $pdo->prepare(
+    "INSERT INTO users (name, email, password, role, status)
+     VALUES (?, ?, ?, 'client', 'pending')"
+);
+$stmt->execute([$name, $email, $hash]);
 
-// Hash password (jika ingin lebih secure)
-// $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-// insert user baru
-$insert = "INSERT INTO users (username, password, role) VALUES (?,?,?)";
-$stmt = $conn->prepare($insert);
-if(!$stmt){
-    echo json_encode([
-        "status" => "failed",
-        "message" => "Database prepare error: " . $conn->error
-    ]);
-    exit;
-}
-
-$stmt->bind_param("sss", $username, $password, $role); // Gunakan $hashedPassword jika hash
-
-if($stmt->execute()){
-    echo json_encode([
-        "status" => "success",
-        "message" => "Registrasi berhasil",
-        "user_id" => $stmt->insert_id,
-        "username" => $username,
-        "role" => $role
-    ]);
-}else{
-    echo json_encode([
-        "status" => "failed",
-        "message" => "Gagal registrasi: " . $stmt->error,
-        "error_details" => $conn->error
-    ]);
-}
-
-$stmt->close();
-$conn->close();
-?>
+echo json_encode([
+    "status" => true,
+    "message" => "Registrasi berhasil, menunggu persetujuan admin"
+]);
